@@ -1,0 +1,69 @@
+#!/bin/sh
+
+ACD_ENCRYPTED="/plex/.acd"
+ACD_UNENCRYPTED="/plex/acd"
+LOCAL_ENCRYPTED="/plex/.local"
+LOCAL_UNENCRYPTED="/plex/local"
+UNION_COMBINED="/plex/sorted"
+
+ENCFS_KEY="/root/.encfs6.xml"
+ENCFS_PASS="/root/.plex-acd.encfs"
+
+#
+# Do not edit under this line
+#
+echo "+------------------------------------------------------------+"
+echo "| Amazon Cloud Drive tools for mouting with acdcli and encfs |"
+echo "+------------------------------------------------------------+"
+
+mount(){
+    acd_cli mount $ACD_ENCRYPTED
+    cat $ENCFS_PASS | ENCFS6_CONFIG=$ENCFS_KEY encfs -o allow_other -S --public $ACD_ENCRYPTED $ACD_UNENCRYPTED
+    cat $ENCFS_PASS | ENCFS6_CONFIG=$ENCFS_KEY encfs -S --public $LOCAL_ENCRYPTED $LOCAL_UNENCRYPTED
+    unionfs-fuse -o cow -o allow_other $LOCAL_UNENCRYPTED/secret=RW:$ACD_UNENCRYPTED/secret=RO $UNION_COMBINED
+}
+
+umount(){
+        echo "Unmounting: start"
+        umount $UNION_COMBINED
+        umount $ACD_UNENCRYPTED
+        umount $LOCAL_UNENCRYPTED
+        echo "Unmounting: completed"
+}
+
+acd_umount(){
+    umount $ACD_ENCRYPTED
+}
+acd_mount(){
+    acd_cli mount $ACD_ENCRYPTED
+}
+acd_sync(){
+   acdcli sync
+}
+acd_upload(){
+   acdcli upload --remove-source-files $LOCAL_ENCRYPTED/* / --max-connections 10
+}
+acd_checkandfixmount(){
+    FOLDER_COUNT=$(ls -l $ACD_UNENCRYPTED  | grep -v '^total' | wc -l)
+    if [ $FOLDER_COUNT -gt 0 ]; then
+        echo "- Everything Looks ok (Folder count: $FOLDER_COUNT)"
+    else
+        acd_umount && acd_mount;;            
+    fi
+}
+
+case "$1" in
+    mount)
+        mount;;
+    umount)
+        umount;;
+    remount)
+        acd_sync && acd_umount && acd_mount;;
+    upload)
+        acd_upload && acd_sync;;
+    fixmount)
+        acd_checkandfixmount;;
+
+esac
+exit 0
+
